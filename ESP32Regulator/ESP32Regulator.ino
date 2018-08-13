@@ -55,9 +55,12 @@ void loop() {
    WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6);
    WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, 20);
    WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass, 20);
-   WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", NULL, 40);
-   WiFiManagerParameter hint("<small>*Rada:jezeli chcesz zapisac parametry serwera MQTT zaznacz checkboxa</small>");
+   WiFiManagerParameter custom_mqtt_topic("topic1", "mqtt topic", NULL, 40);
+   WiFiManagerParameter macDevice("macdevice1", "Device MAC", NULL, 40);
+   WiFiManagerParameter hint("<small>* Tip: If you want to save your MQTT params check it</small>");
    WiFiManagerParameter save_checkbox("savebox","Zapisac?","T",2,customhtml);
+   WIfiManagerParameter scanningDevices("<h3> Wait bluetooth is scanning devices now...</h3>");
+   WIfiManagerParameter searchedDevices("<h3> Device with MAC was found! </h3>");
    WiFiManagerParameter line("<br>");
   
    WiFiManager wifiManager;
@@ -78,9 +81,12 @@ void loop() {
     wifiManager.addParameter(&line);
     wifiManager.addParameter(&hint);
     wifiManager.addParameter(&line);
-    wifiManager.addParameter(&mac_searcher);
-    wifiManager.addParameter(&line);
-    wifiManager.addParameter(&skrypt_java);
+
+    if(macDeviceOne != "") {
+      wifiManager.addParameter(&custom_mqtt_topic);
+      wifiManager.addParameter(&macDevice);
+      wifiManager.addParameter(&line);
+    }
     
     //Connecting to AP
     if(wifiManager.autoConnect("ESP 32 - test","wojtek2468")) {
