@@ -11,7 +11,6 @@
 
 const char* CONFIG_FILE = "/config.json";
 boolean checkbut_status = false;
-boolean ifBluetoothScan; 
 const char* mqtt_server = "";
 const char* mqtt_port = ""; //uint16 but it could be 'int'
 const char* mqtt_user = "";
@@ -27,7 +26,7 @@ static BLEUUID    charUUID("47e9ee2b-47e9-11e4-8939-164230d1df67");
 // The characteristic of the PIN.
 static BLEUUID    pinUUID("47e9ee30-47e9-11e4-8939-164230d1df67");
 static BLEAddress *pServerAddress;
-const char* macDeviceOne = "";
+std::string macDeviceOne = "";
 static boolean doConnect = false;
 static boolean connected = false;
 static BLERemoteCharacteristic* pRemoteCharacteristic;
@@ -41,7 +40,11 @@ bool connectToServer(BLEAddress pAddress) {
 
     // Connect to the remove BLE Server.
     pClient->connect(pAddress);
+    if(pClient->isConnected()==true){
     Serial.println(" - Connected to server");
+    } else {
+       ESP.restart();
+    }
 
     // Obtain a reference to the service we are after in the remote BLE server.
     BLERemoteService* pRemoteService = pClient->getService(serviceUUID);
@@ -95,7 +98,8 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
    */
   void onResult(BLEAdvertisedDevice advertisedDevice) {
     Serial.print("BLE Advertised Device found: ");
-    Serial.println(advertisedDevice.toString().c_str());
+    //Serial.println(advertisedDevice.toString().c_str());
+    Serial.println(advertisedDevice.getAddress().toString().c_str());
 
     // We have found a device, let us now see if it contains the service we are looking for.
     if (advertisedDevice.haveServiceUUID() && advertisedDevice.getServiceUUID().equals(serviceUUID)) {
@@ -105,7 +109,8 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       advertisedDevice.getScan()->stop(); //znalezlismy nasze uzyteczne urzadzen -> stopujemy scan 
 
       pServerAddress = new BLEAddress(advertisedDevice.getAddress()); //pobranie adresu urzadzenia
-      macDeviceOne = advertisedDevice.getAddress().toString().c_str(); //adres mac urzadzenia w tablicy
+      macDeviceOne = advertisedDevice.getAddress().toString(); //adres mac urzadzenia w tablicy
+      
       doConnect = true; 
 
     } // Found our server
@@ -131,7 +136,11 @@ void setup() {
     if(!ReadFile()) {
      Serial.println("Failed to read config file, using default values");
    }
-   ifBluetoothScan = true;   
+    BLEDevice::init("");
+    BLEScan* pBLEScan = BLEDevice::getScan(); //begin to scan devices
+    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); //handling for each found device
+    pBLEScan->setActiveScan(true);
+    pBLEScan->start(30); //scanning for 30 secounds   
 }
 
 void loop() {
@@ -141,15 +150,6 @@ void loop() {
    if(checkbut_status) {
      strcat(customhtml, " checked"); //only way to handle checkbox state is to add "checked" string
    }
-
-   if(ifBluetoothScan) {
-        BLEDevice::init("");
-        BLEScan* pBLEScan = BLEDevice::getScan(); //begin to scan devices
-        pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); //handling for each found device
-        pBLEScan->setActiveScan(true);
-        pBLEScan->start(30); //scanning for 30 secounds 
-        ifBluetoothScan = false;
-    }
       
    //JavaScript functions
    //WiFiManagerParameter skrypt_java("<script language=\"JavaScript\"> function funkcja1(){var asd=document.getElementById('select1').options[document.getElementById('select1').selectedIndex].value; var macOutput=document.getElementById(\"macOutput\"); macOutput.value=asd;}</script>");
@@ -161,7 +161,7 @@ void loop() {
    WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, 20); //udnnellq 
    WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass, 20); //594Vf9OfDZ-6 
    WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", NULL, 40);
-   WiFiManagerParameter macDevice("macdevice1", "Device MAC", macDeviceOne, 40);
+   WiFiManagerParameter macDevice("macdevice1", "Device MAC", macDeviceOne.c_str(), 40);
    WiFiManagerParameter hint("<small>* Tip: If you want to save your MQTT params check it</small>");
    WiFiManagerParameter save_checkbox("savebox","Zapisac?","T",2,customhtml);
    WiFiManagerParameter scanningDevices("<h3> Wait bluetooth is scanning devices now...</h3>");
@@ -188,10 +188,13 @@ void loop() {
     wifiManager.addParameter(&scanningDevices);
     wifiManager.addParameter(&line);
 
+    Serial.print("macDeviceOne value: ");
+    Serial.println(macDeviceOne.c_str());
+ 
     if(macDeviceOne != "") {
       wifiManager.addParameter(&searchedDevices);
-      wifiManager.addParameter(&custom_mqtt_topic);
       wifiManager.addParameter(&macDevice);
+      wifiManager.addParameter(&custom_mqtt_topic);
       wifiManager.addParameter(&line);
     }
     
@@ -217,7 +220,8 @@ void loop() {
       Serial.println("connected...yeey :)"); //After this we are connected to wifi network 
   
       if (doConnect == true) {
-        if (connectToServer(*pServerAddress)) { //podlaczenie do serwera (adres mamy zapisany)
+        BLEAddress addressToConnect = BLEAddress(macDevice.getValue());
+        if (connectToServer(addressToConnect)) { //podlaczenie do serwera (adres mamy zapisany)  ((*pServerAddress))
           Serial.println("We are now connected to the BLE Server.");
           connected = true;
         } else {
@@ -249,7 +253,7 @@ void loop() {
       float castedTemperature = (float) (readTemperature/2);
       char temperatureToPublish[8];
       Serial.println(dtostrf(castedTemperature,6,2,temperatureToPublish));
-      //client.publish(custom_mqtt_topic.getValue(), dtostrf(castedTemperature,6,2,temperatureToPublish));
+      client.publish(custom_mqtt_topic.getValue(), dtostrf(castedTemperature,6,2,temperatureToPublish));
       //Holding connection with MQTT 
       client.loop();
       delay(1000);
