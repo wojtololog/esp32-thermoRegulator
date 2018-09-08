@@ -11,10 +11,11 @@
 
 const char* CONFIG_FILE = "/config.json";
 boolean checkbut_status = false;
-const char* mqtt_server;
-const char* mqtt_port; //uint16 but it could be 'int'
-const char* mqtt_user;
-const char* mqtt_pass;
+String mqtt_server = "";
+String mqtt_port = ""; //uint16 but it could be 'int'
+String mqtt_user = "";
+String mqtt_pass = "";
+String mqtt_topic = "";
 
 //Bluetooth section
 // The remote service we wish to connect to.
@@ -30,6 +31,17 @@ std::string macDeviceOne = "";
 static boolean doConnect = false;
 static boolean connected = false;
 static BLERemoteCharacteristic* pRemoteCharacteristic;
+
+static void notifyCallback(
+  BLERemoteCharacteristic* pBLERemoteCharacteristic,
+  uint8_t* pData,
+  size_t length,
+  bool isNotify) {
+  Serial.print("Notify callback for characteristic ");
+  Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
+  Serial.print(" of data length ");
+  Serial.println(length);
+}
 
 bool connectToServer(BLEAddress pAddress) {
     Serial.print("Forming a connection to ");
@@ -86,7 +98,7 @@ bool connectToServer(BLEAddress pAddress) {
     Serial.println(" - Found our characteristic");
 
 
-    //pRemoteCharacteristic->registerForNotify(notifyCallback);
+    pRemoteCharacteristic->registerForNotify(notifyCallback);
 }
 
 /**
@@ -107,16 +119,21 @@ class MyAdvertisedDeviceCallbacks: public BLEAdvertisedDeviceCallbacks {
       // W tej funkcji trzeba by nie przerywac skanowania i wyszukiwac urzadzenia - zapisywac ich adresy do tablicy
       Serial.print("Found our device!  address: "); 
       advertisedDevice.getScan()->stop(); //znalezlismy nasze uzyteczne urzadzen -> stopujemy scan 
-
       pServerAddress = new BLEAddress(advertisedDevice.getAddress()); //pobranie adresu urzadzenia
       macDeviceOne = advertisedDevice.getAddress().toString(); //adres mac urzadzenia w tablicy
-      
       doConnect = true; 
 
     } // Found our server
   } // onResult
 }; // MyAdvertisedDeviceCallbacks
 
+void btleSetup() {
+   BLEDevice::init("");
+   BLEScan* pBLEScan = BLEDevice::getScan(); //begin to scan devices
+   pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); //handling for each found device
+   pBLEScan->setActiveScan(true);
+   pBLEScan->start(30); //scanning for 30 secounds   
+}
 
 //JSON handling functions
 bool ReadFile();
@@ -128,56 +145,42 @@ PubSubClient client(espClient);
 
 void setup() {
    Serial.begin(115200);
-   
-    BLEDevice::init("");
-    BLEScan* pBLEScan = BLEDevice::getScan(); //begin to scan devices
-    pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); //handling for each found device
-    pBLEScan->setActiveScan(true);
-    pBLEScan->start(30); //scanning for 30 secounds   
-}
-
-void loop() {
-   //html checkbox
-   char customhtml[24] = "type=\"checkbox\"";
-
-    //file system handling
+   //file system handling
     bool result = SPIFFS.begin();
     Serial.println("SPIFFS is opened:" + result);
    
     if(!ReadFile()) {
      Serial.println("Failed to read config file, using default values");
    }
-   
+   btleSetup();
+ 
+   //html checkbox
+   char customhtml[24] = "type=\"checkbox\"";
+
    if(checkbut_status) {
      strcat(customhtml, " checked"); //only way to handle checkbox state is to add "checked" string
    }
-      
-   //JavaScript functions
-   //WiFiManagerParameter skrypt_java("<script language=\"JavaScript\"> function funkcja1(){var asd=document.getElementById('select1').options[document.getElementById('select1').selectedIndex].value; var macOutput=document.getElementById(\"macOutput\"); macOutput.value=asd;}</script>");
-   //WiFiManagerParameter mac_searcher("<select id=\"select1\"> <option value=\"0\">0</option> <option value=\"1\">1</option> <option value=\"2\">2</option></select><input type=\"text\" id=\"macOutput\"/><input type=\"button\" value=\"Pobierz\" onclick=\"funkcja1()\">");
 
-     Serial.println("mqqt server value before writing into textfield: ");
-     Serial.println(mqtt_server);
-   //Creating custom HTML
-   WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40); //m20.cloudmqtt.com
-   WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6); // 10905 
-   WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user, 20); //udnnellq 
-   WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass, 20); //594Vf9OfDZ-6 
+      Serial.println("Value of mqtt server: ");
+      Serial.println(mqtt_server.c_str());
+      Serial.println("Value of macDevice: ");
+      Serial.println(macDeviceOne.c_str());
+   //creatingWiFiManagerParams
+   WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server.c_str(), 40); //m20.cloudmqtt.com
+   WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port.c_str(), 6); // 10905 
+   WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user.c_str(), 20); //udnnellq 
+   WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass.c_str(), 20); //594Vf9OfDZ-6 
    WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", NULL, 40);
-   WiFiManagerParameter macDevice("macdevice1", "Device MAC", macDeviceOne.c_str(), 40);
+   WiFiManagerParameter macDevice("macdevice1", "Device MAC address", macDeviceOne.c_str(), 40);
    WiFiManagerParameter hint("<small>* Tip: If you want to save your MQTT params check it</small>");
    WiFiManagerParameter save_checkbox("savebox","Zapisac?","T",2,customhtml);
    WiFiManagerParameter scanningDevices("<h3> Wait bluetooth is scanning devices now...</h3>");
    WiFiManagerParameter searchedDevices("<h3> Device with MAC was found! </h3>");
    WiFiManagerParameter line("<br>");
-  
-   WiFiManager wifiManager;
    
-    //reset saved settings
-    wifiManager.resetSettings(); 
-    
-    wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
-
+   WiFiManager wifiManager;
+   wifiManager.resetSettings(); //reset saved settings
+   wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
     //adding custom html to config page
     wifiManager.addParameter(&custom_mqtt_server);
     wifiManager.addParameter(&custom_mqtt_port);
@@ -197,12 +200,10 @@ void loop() {
       wifiManager.addParameter(&custom_mqtt_topic);
       wifiManager.addParameter(&line);
     }
-    
     //Connecting to AP
     if(wifiManager.autoConnect("ESP 32 - test","wojtek2468")) {
-
+      mqtt_topic = custom_mqtt_topic.getValue();
       checkbut_status = (strncmp(save_checkbox.getValue(),"T",1) == 0); //0==0, checkbut_status = true -> odczytana wczensiej wartosc (z JSONA) jest taka sama, checkbox zaznaczony;
-
       if(checkbut_status) {
        mqtt_server = custom_mqtt_server.getValue();
        mqtt_port = custom_mqtt_port.getValue();
@@ -215,13 +216,13 @@ void loop() {
        mqtt_user = "";
        mqtt_pass = "";
       }
-
-      WriteFile();   
+      
+      WriteFile(); //to JSON writing  
       Serial.println("connected...yeey :)"); //After this we are connected to wifi network 
   
       if (doConnect == true) {
         BLEAddress addressToConnect = BLEAddress(macDevice.getValue());
-        if (connectToServer(addressToConnect)) { //podlaczenie do serwera (adres mamy zapisany)  ((*pServerAddress))
+        if (connectToServer(addressToConnect)) { //connecting to server we have our MAC address in textbox
           Serial.println("We are now connected to the BLE Server.");
           connected = true;
         } else {
@@ -249,24 +250,28 @@ void loop() {
           delay(5000);
         }
       }
-     
-      uint8_t readTemperature = pRemoteCharacteristic->readUInt8();
-      float castedTemperature = (float) (readTemperature/2);
-      char temperatureToPublish[8];
-      Serial.println(dtostrf(castedTemperature,6,2,temperatureToPublish));
-      client.publish(custom_mqtt_topic.getValue(), dtostrf(castedTemperature,6,2,temperatureToPublish));
-      //Holding connection with MQTT 
-      client.loop();
-      delay(3000);
-      
-    } else {
-      delay(2000);
-      ESP.restart(); 
-    }
+          
+      } else {
+        delay(2000);
+        ESP.restart(); 
+      }
+    
    } else {
+      WriteFile();
       delay(2000);
       ESP.restart(); 
     }
+}
+
+void loop() {
+  uint8_t readTemperature = pRemoteCharacteristic->readUInt8();
+  float castedTemperature = (float) (readTemperature/2);
+  char temperatureToPublish[8];
+  Serial.println(dtostrf(castedTemperature,6,2,temperatureToPublish));
+  client.publish(mqtt_topic.c_str(), dtostrf(castedTemperature,6,2,temperatureToPublish));
+  //Holding connection with MQTT 
+  client.loop();
+  delay(10000);       
 }
 
 void WriteFile() {
@@ -320,10 +325,10 @@ bool ReadFile() {
 
     //zapisywanie z jsona do zmiennych
     if(json.containsKey("checkbut_status")) checkbut_status = json["checkbut_status"]; 
-    if(json.containsKey("mqtt_server")) mqtt_server = json["mqtt_server"];
-    if(json.containsKey("mqtt_port")) mqtt_port = json["mqtt_port"];
-    if(json.containsKey("mqtt_user")) mqtt_user = json["mqtt_user"];
-    if(json.containsKey("mqtt_pass")) mqtt_pass = json["mqtt_pass"];
+    if(json.containsKey("mqtt_server")) mqtt_server = json["mqtt_server"].as<String>();;
+    if(json.containsKey("mqtt_port")) mqtt_port = json["mqtt_port"].as<String>();;
+    if(json.containsKey("mqtt_user")) mqtt_user = json["mqtt_user"].as<String>();;
+    if(json.containsKey("mqtt_pass")) mqtt_pass = json["mqtt_pass"].as<String>();;
     
   }
 
