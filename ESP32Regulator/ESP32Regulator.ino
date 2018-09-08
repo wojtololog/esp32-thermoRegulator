@@ -11,10 +11,10 @@
 
 const char* CONFIG_FILE = "/config.json";
 boolean checkbut_status = false;
-const char* mqtt_server = "";
-const char* mqtt_port = ""; //uint16 but it could be 'int'
-const char* mqtt_user = "";
-const char* mqtt_pass = "";
+const char* mqtt_server;
+const char* mqtt_port; //uint16 but it could be 'int'
+const char* mqtt_user;
+const char* mqtt_pass;
 
 //Bluetooth section
 // The remote service we wish to connect to.
@@ -128,14 +128,7 @@ PubSubClient client(espClient);
 
 void setup() {
    Serial.begin(115200);
-
-   //file system handling
-    bool result = SPIFFS.begin();
-    Serial.println("SPIFFS is opened:" + result);
-     
-    if(!ReadFile()) {
-     Serial.println("Failed to read config file, using default values");
-   }
+   
     BLEDevice::init("");
     BLEScan* pBLEScan = BLEDevice::getScan(); //begin to scan devices
     pBLEScan->setAdvertisedDeviceCallbacks(new MyAdvertisedDeviceCallbacks()); //handling for each found device
@@ -146,6 +139,14 @@ void setup() {
 void loop() {
    //html checkbox
    char customhtml[24] = "type=\"checkbox\"";
+
+    //file system handling
+    bool result = SPIFFS.begin();
+    Serial.println("SPIFFS is opened:" + result);
+   
+    if(!ReadFile()) {
+     Serial.println("Failed to read config file, using default values");
+   }
    
    if(checkbut_status) {
      strcat(customhtml, " checked"); //only way to handle checkbox state is to add "checked" string
@@ -154,7 +155,9 @@ void loop() {
    //JavaScript functions
    //WiFiManagerParameter skrypt_java("<script language=\"JavaScript\"> function funkcja1(){var asd=document.getElementById('select1').options[document.getElementById('select1').selectedIndex].value; var macOutput=document.getElementById(\"macOutput\"); macOutput.value=asd;}</script>");
    //WiFiManagerParameter mac_searcher("<select id=\"select1\"> <option value=\"0\">0</option> <option value=\"1\">1</option> <option value=\"2\">2</option></select><input type=\"text\" id=\"macOutput\"/><input type=\"button\" value=\"Pobierz\" onclick=\"funkcja1()\">");
-     
+
+     Serial.println("mqqt server value before writing into textfield: ");
+     Serial.println(mqtt_server);
    //Creating custom HTML
    WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server, 40); //m20.cloudmqtt.com
    WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port, 6); // 10905 
@@ -187,9 +190,6 @@ void loop() {
     wifiManager.addParameter(&line);
     wifiManager.addParameter(&scanningDevices);
     wifiManager.addParameter(&line);
-
-    Serial.print("macDeviceOne value: ");
-    Serial.println(macDeviceOne.c_str());
  
     if(macDeviceOne != "") {
       wifiManager.addParameter(&searchedDevices);
@@ -249,6 +249,7 @@ void loop() {
           delay(5000);
         }
       }
+     
       uint8_t readTemperature = pRemoteCharacteristic->readUInt8();
       float castedTemperature = (float) (readTemperature/2);
       char temperatureToPublish[8];
@@ -256,11 +257,15 @@ void loop() {
       client.publish(custom_mqtt_topic.getValue(), dtostrf(castedTemperature,6,2,temperatureToPublish));
       //Holding connection with MQTT 
       client.loop();
-      delay(1000);
-    } 
-   } else {  //zamkniecie if(wifiManager.autoConnect("ESP 32 - test","wojtek2468"))
-      ESP.restart();
-      delay(5000);
+      delay(3000);
+      
+    } else {
+      delay(2000);
+      ESP.restart(); 
+    }
+   } else {
+      delay(2000);
+      ESP.restart(); 
     }
 }
 
