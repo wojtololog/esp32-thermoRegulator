@@ -96,7 +96,13 @@ bool connectToServer(BLEAddress pAddress) {
       return false;
     }
     Serial.println(" - Found our characteristic");
-
+    Serial.println("value of characteristic:");
+    std::string value = pRemoteCharacteristic->readValue();
+    for(int i =0;i < value.length();++i) {
+      Serial.println(value[i]);
+      Serial.println((int)value[i]);
+    }
+    
 
     pRemoteCharacteristic->registerForNotify(notifyCallback);
 }
@@ -219,12 +225,14 @@ void setup() {
       
       WriteFile(); //to JSON writing  
       Serial.println("connected...yeey :)"); //After this we are connected to wifi network 
-  
+      delay(3000);
+      
       if (doConnect == true) {
         BLEAddress addressToConnect = BLEAddress(macDevice.getValue());
         if (connectToServer(addressToConnect)) { //connecting to server we have our MAC address in textbox
           Serial.println("We are now connected to the BLE Server.");
           connected = true;
+          delay(3000);
         } else {
           Serial.println("We have failed to connect to the server; there is nothin more we will do.");
         }
@@ -264,11 +272,14 @@ void setup() {
 }
 
 void loop() {
-  uint8_t readTemperature = pRemoteCharacteristic->readUInt8();
-  float castedTemperature = (float) (readTemperature/2);
-  char temperatureToPublish[8];
-  Serial.println(dtostrf(castedTemperature,6,2,temperatureToPublish));
-  client.publish(mqtt_topic.c_str(), dtostrf(castedTemperature,6,2,temperatureToPublish));
+  std::string value = pRemoteCharacteristic->readValue();
+  Serial.println("value of set temp: ");
+  Serial.println((int)value[1]);
+//  uint8_t readTemperature = pRemoteCharacteristic->readUInt8();
+//  float castedTemperature = (float) (readTemperature/2);
+//  char temperatureToPublish[8];
+  //Serial.println(dtostrf(castedTemperature,6,2,temperatureToPublish));
+//  client.publish(mqtt_topic.c_str(), dtostrf(castedTemperature,6,2,temperatureToPublish));
   //Holding connection with MQTT 
   client.loop();
   delay(10000);       
