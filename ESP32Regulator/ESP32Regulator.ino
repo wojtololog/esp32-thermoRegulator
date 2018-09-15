@@ -32,16 +32,6 @@ static boolean doConnect = false;
 static boolean connected = false;
 static BLERemoteCharacteristic* pRemoteCharacteristic;
 
-static void notifyCallback(
-  BLERemoteCharacteristic* pBLERemoteCharacteristic,
-  uint8_t* pData,
-  size_t length,
-  bool isNotify) {
-  Serial.print("Notify callback for characteristic ");
-  Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-  Serial.print(" of data length ");
-  Serial.println(length);
-}
 
 bool connectToServer(BLEAddress pAddress) {
     Serial.print("Forming a connection to ");
@@ -97,19 +87,6 @@ bool connectToServer(BLEAddress pAddress) {
     }
     Serial.println(" - Found our characteristic");
     Serial.println("value of characteristic:");
-    if(pRemoteCharacteristic->canNotify()) {
-      Serial.println("Characteristic can notyify");
-    } else {
-      Serial.println("Characteristic can not notyify");
-    }
-    std::string value = pRemoteCharacteristic->readValue();
-    for(int i =0;i < value.length();++i) {
-      Serial.println(value[i]);
-      Serial.println((int)value[i]);
-    }
-    
-
-    pRemoteCharacteristic->registerForNotify(notifyCallback);
 }
 
 /**
@@ -147,8 +124,8 @@ void btleSetup() {
 }
 
 //JSON handling functions
-bool ReadFile();
-void WriteFile();
+bool readFromJSON();
+void writeToJSON();
 
 //MQTT subscriber
 WiFiClient espClient;
@@ -160,7 +137,7 @@ void setup() {
     bool result = SPIFFS.begin();
     Serial.println("SPIFFS is opened:" + result);
    
-    if(!ReadFile()) {
+    if(!readFromJSON()) {
      Serial.println("Failed to read config file, using default values");
    }
    btleSetup();
@@ -228,7 +205,7 @@ void setup() {
        mqtt_pass = "";
       }
       
-      WriteFile(); //to JSON writing  
+      writeToJSON(); //to JSON writing  
       Serial.println("connected...yeey :)"); //After this we are connected to wifi network 
       delay(3000);
       
@@ -270,7 +247,7 @@ void setup() {
       }
     
    } else {
-      WriteFile();
+      writeToJSON();
       delay(2000);
       ESP.restart(); 
     }
@@ -279,7 +256,6 @@ void setup() {
 void loop() {
   std::string characterstic = pRemoteCharacteristic->readValue();
   Serial.println("value of set temp: ");
-  Serial.println((float)characterstic[1]);
   float temperature = (float)characterstic[1];
   float dividedTemperature = temperature / 2.00F;
   Serial.println(dividedTemperature);
@@ -293,8 +269,8 @@ void loop() {
   delay(10000);       
 }
 
-void WriteFile() {
-  Serial.println("zapisywanie JSON");
+void writeToJSON() {
+  Serial.println("Saving to JSON");
   DynamicJsonBuffer jsonBuffer;
   JsonObject& json = jsonBuffer.createObject();
  
@@ -309,6 +285,7 @@ void WriteFile() {
   File f = SPIFFS.open(CONFIG_FILE, "w");
   if(!f) {
     Serial.println("Nie udalo sie otworzyc pliku do zapisu parametrow");
+    return;
   }
 
   json.prettyPrintTo(Serial);
@@ -318,7 +295,7 @@ void WriteFile() {
   Serial.println("Pomyslnie zapisano parametry");
 }
 
-bool ReadFile() {
+bool readFromJSON() {
 
   File f = SPIFFS.open(CONFIG_FILE, "r");
   if(!f) {
