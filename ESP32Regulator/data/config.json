@@ -3,5 +3,6 @@
   "mqtt_server": "",
   "mqtt_port": "",
   "mqtt_user": "",
-  "mqtt_pass": ""
+  "mqtt_pass": "",
+  "mqtt_topic": ""
 }

@@ -123,6 +123,10 @@ void btleSetup() {
    pBLEScan->start(10); //scanning for 10 secounds   
 }
 
+void configModeCallback (WiFiManager *myWiFiManager) {
+  myWiFiManager->resetSettings();
+}
+
 //JSON handling functions
 bool readFromJSON();
 void writeToJSON();
@@ -147,18 +151,14 @@ void setup() {
 
    if(checkbut_status) {
      strcat(customhtml, " checked"); //only way to handle checkbox state is to add "checked" string
-   }
-
-      Serial.println("Value of mqtt server: ");
-      Serial.println(mqtt_server.c_str());
-      Serial.println("Value of macDevice: ");
-      Serial.println(macDeviceOne.c_str());
+   } 
+   
    //creatingWiFiManagerParams
    WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server.c_str(), 40); //m20.cloudmqtt.com
    WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port.c_str(), 6); // 10905 
    WiFiManagerParameter custom_mqtt_user("user", "mqtt user", mqtt_user.c_str(), 20); //udnnellq 
    WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass.c_str(), 20); //594Vf9OfDZ-6 
-   WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", NULL, 40);
+   WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", mqtt_topic.c_str(), 40);
    WiFiManagerParameter macDevice("macdevice1", "Device MAC address", macDeviceOne.c_str(), 40);
    WiFiManagerParameter hint("<small>* Tip: If you want to save your MQTT params check it</small>");
    WiFiManagerParameter save_checkbox("savebox","Zapisac?","T",2,customhtml);
@@ -167,7 +167,9 @@ void setup() {
    WiFiManagerParameter line("<br>");
    
    WiFiManager wifiManager;
-   wifiManager.resetSettings(); //reset saved settings
+   //set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
+   wifiManager.setAPCallback(configModeCallback);
+   //wifiManager.resetSettings(); //reset saved settings
    wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
     //adding custom html to config page
     wifiManager.addParameter(&custom_mqtt_server);
@@ -188,25 +190,19 @@ void setup() {
       wifiManager.addParameter(&custom_mqtt_topic);
       wifiManager.addParameter(&line);
     }
+
+    
     //Connecting to AP
-    if(wifiManager.autoConnect("ESP 32 - test","wojtek2468")) {
-      mqtt_topic = custom_mqtt_topic.getValue();
+    if(wifiManager.autoConnect("ESP 32 - test","wojtek2468")) { //After this we are connected to wifi network    
       checkbut_status = (strncmp(save_checkbox.getValue(),"T",1) == 0); //0==0, checkbut_status = true -> odczytana wczensiej wartosc (z JSONA) jest taka sama, checkbox zaznaczony;
-      if(checkbut_status) {
-       mqtt_server = custom_mqtt_server.getValue();
-       mqtt_port = custom_mqtt_port.getValue();
-       mqtt_user = custom_mqtt_user.getValue();
-       mqtt_pass = custom_mqtt_pass.getValue();
-      }
-      else {
-       mqtt_server = "";
-       mqtt_port = "";
-       mqtt_user = "";
-       mqtt_pass = "";
-      }
+      mqtt_server = custom_mqtt_server.getValue();
+      mqtt_port = custom_mqtt_port.getValue();
+      mqtt_user = custom_mqtt_user.getValue();
+      mqtt_pass = custom_mqtt_pass.getValue();
+      mqtt_topic = custom_mqtt_topic.getValue();
       
       writeToJSON(); //to JSON writing  
-      Serial.println("connected...yeey :)"); //After this we are connected to wifi network 
+      Serial.println("connected...yeey :)"); 
       delay(3000);
       
       if (doConnect == true) {
@@ -229,9 +225,15 @@ void setup() {
         while (!client.connected()) {
         Serial.println("Connecting to MQTT...");
         if (client.connect("ESP32Client", custom_mqtt_user.getValue(), custom_mqtt_pass.getValue() )) {
-    
           Serial.println("connected");
-     
+          std::string characterstic = pRemoteCharacteristic->readValue();
+          Serial.println("value of set temp: ");
+          float temperature = (float)characterstic[1];
+          float dividedTemperature = temperature / 2.00F;
+          Serial.println(dividedTemperature);
+          char temperatureToPublish[8];
+          Serial.println(dtostrf(dividedTemperature,6,2,temperatureToPublish));
+          client.publish(mqtt_topic.c_str(), dtostrf(dividedTemperature,6,2,temperatureToPublish));     
         } else {
           Serial.print("failed with state ");
           Serial.print(client.state());
@@ -251,22 +253,20 @@ void setup() {
       delay(2000);
       ESP.restart(); 
     }
+
+  delay(10000); 
+  ESP.restart();
 }
+  
 
 void loop() {
-  std::string characterstic = pRemoteCharacteristic->readValue();
-  Serial.println("value of set temp: ");
-  float temperature = (float)characterstic[1];
-  float dividedTemperature = temperature / 2.00F;
-  Serial.println(dividedTemperature);
+  
 //  uint8_t readTemperature = pRemoteCharacteristic->readUInt8();
 //  float castedTemperature = (float) (readTemperature/2);
-//  char temperatureToPublish[8];
-  //Serial.println(dtostrf(castedTemperature,6,2,temperatureToPublish));
-//  client.publish(mqtt_topic.c_str(), dtostrf(castedTemperature,6,2,temperatureToPublish));
+
   //Holding connection with MQTT 
-  client.loop();
-  delay(10000);       
+  //client.loop();
+      
 }
 
 void writeToJSON() {
@@ -280,6 +280,7 @@ void writeToJSON() {
   json["mqtt_port"] = mqtt_port;
   json["mqtt_user"] = mqtt_user;
   json["mqtt_pass"] = mqtt_pass;
+  json["mqtt_topic"] = mqtt_topic;
  
   //zapis parametrow do pliku
   File f = SPIFFS.open(CONFIG_FILE, "w");
@@ -321,11 +322,11 @@ bool readFromJSON() {
 
     //zapisywanie z jsona do zmiennych
     if(json.containsKey("checkbut_status")) checkbut_status = json["checkbut_status"]; 
-    if(json.containsKey("mqtt_server")) mqtt_server = json["mqtt_server"].as<String>();;
-    if(json.containsKey("mqtt_port")) mqtt_port = json["mqtt_port"].as<String>();;
-    if(json.containsKey("mqtt_user")) mqtt_user = json["mqtt_user"].as<String>();;
-    if(json.containsKey("mqtt_pass")) mqtt_pass = json["mqtt_pass"].as<String>();;
-    
+    if(json.containsKey("mqtt_server")) mqtt_server = json["mqtt_server"].as<String>();
+    if(json.containsKey("mqtt_port")) mqtt_port = json["mqtt_port"].as<String>();
+    if(json.containsKey("mqtt_user")) mqtt_user = json["mqtt_user"].as<String>();
+    if(json.containsKey("mqtt_pass")) mqtt_pass = json["mqtt_pass"].as<String>();
+    if(json.containsKey("mqtt_topic")) mqtt_topic = json["mqtt_topic"].as<String>();
   }
 
   Serial.println("Read from JSON succesfully");
