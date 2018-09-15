@@ -16,6 +16,8 @@ String mqtt_port = ""; //uint16 but it could be 'int'
 String mqtt_user = "";
 String mqtt_pass = "";
 String mqtt_topic = "";
+String tempMacAddress;
+BLEAddress addr = BLEAddress("");
 
 //Bluetooth section
 // The remote service we wish to connect to.
@@ -37,19 +39,18 @@ static void notifyCallback(
   uint8_t* pData,
   size_t length,
   bool isNotify) {
-  Serial.print("Notify callback for characteristic ");
-  Serial.print(pBLERemoteCharacteristic->getUUID().toString().c_str());
-  Serial.print(" of data length ");
+  Serial.println("Notify callback for characteristic ");
+  Serial.println(pBLERemoteCharacteristic->getUUID().toString().c_str());
+  Serial.println(" of data length ");
   Serial.println(length);
 }
 
-bool connectToServer(BLEAddress pAddress) {
+
+
+bool connectToServer(BLEAddress pAddress,BLEClient* pClient) {
     Serial.print("Forming a connection to ");
     Serial.println(pAddress.toString().c_str());
-    
-    BLEClient*  pClient  = BLEDevice::createClient();
-    Serial.println(" - Created client");
-
+     
     // Connect to the remove BLE Server.
     pClient->connect(pAddress);
     if(pClient->isConnected()==true){
@@ -96,15 +97,28 @@ bool connectToServer(BLEAddress pAddress) {
       return false;
     }
     Serial.println(" - Found our characteristic");
-    Serial.println("value of characteristic:");
-    std::string value = pRemoteCharacteristic->readValue();
-    for(int i =0;i < value.length();++i) {
-      Serial.println(value[i]);
-      Serial.println((int)value[i]);
-    }
-    
+    //pRemoteCharacteristic->registerForNotify(notifyCallback);
+}
 
-    pRemoteCharacteristic->registerForNotify(notifyCallback);
+void connectToBLE(String mac) {
+  Serial.println("Starting Arduino BLE CometBlue application...");
+  BLEDevice::init("");
+  addr = BLEAddress(mac.c_str());  
+  doConnect = true;
+  
+  BLEClient*  pClient  = BLEDevice::createClient();
+  Serial.println(" - Created client");
+  Serial.println(doConnect);
+  
+  if (doConnect == true) {
+    if (connectToServer(addr, pClient)) {
+      Serial.println("We are now connected to the BLE Server.");
+      connected = true;
+    } else {
+      Serial.println("We have failed to connect to the server; there is nothin more we will do.");
+    }
+    doConnect = false;
+  }
 }
 
 /**
@@ -225,31 +239,38 @@ void setup() {
       
       WriteFile(); //to JSON writing  
       Serial.println("connected...yeey :)"); //After this we are connected to wifi network 
+      tempMacAddress = macDevice.getValue();
+      mqtt_server = custom_mqtt_server.getValue();
+      mqtt_port = custom_mqtt_port.getValue();
+      mqtt_user = custom_mqtt_user.getValue();
+      mqtt_pass = custom_mqtt_pass.getValue();
       delay(3000);
+                                
+ }  else {
+    delay(3000);
+    ESP.restart();
+  }
+}
+
+void loop() {
       
-      if (doConnect == true) {
-        BLEAddress addressToConnect = BLEAddress(macDevice.getValue());
-        if (connectToServer(addressToConnect)) { //connecting to server we have our MAC address in textbox
-          Serial.println("We are now connected to the BLE Server.");
-          connected = true;
-          delay(3000);
-        } else {
-          Serial.println("We have failed to connect to the server; there is nothin more we will do.");
-        }
-        doConnect = false;
-      }
-  
-      if(connected) {  
+      connectToBLE(tempMacAddress);
+      
+       if(connected) {
         //Set CloudMQTT access
-        client.setServer(custom_mqtt_server.getValue(), atoi(custom_mqtt_port.getValue()));
-   
+        client.setServer(mqtt_server.c_str(), atoi(mqtt_port.c_str()));
         //serwer mqqt
         while (!client.connected()) {
-        Serial.println("Connecting to MQTT...");
-        if (client.connect("ESP32Client", custom_mqtt_user.getValue(), custom_mqtt_pass.getValue() )) {
-    
-          Serial.println("connected");
-     
+          Serial.println("Connecting to MQTT...");
+          if (client.connect("ESP32Client", mqtt_user.c_str(), mqtt_pass.c_str() )) {  
+            Serial.println("connected");
+            std::string value = pRemoteCharacteristic->readValue();
+            Serial.println("value of set temp: ");
+            Serial.println((float)value[1]);
+            float castedTemperature = value[1]/2;
+            char temperatureToPublish[8];
+            client.publish(mqtt_topic.c_str(), dtostrf(castedTemperature,6,2,temperatureToPublish)); 
+            client.loop();    
         } else {
           Serial.print("failed with state ");
           Serial.print(client.state());
@@ -258,32 +279,17 @@ void setup() {
           delay(5000);
         }
       }
-          
-      } else {
-        delay(2000);
-        ESP.restart(); 
-      }
-    
-   } else {
-      WriteFile();
-      delay(2000);
-      ESP.restart(); 
-    }
+     }               
+delay(10000);
 }
-
-void loop() {
-  std::string value = pRemoteCharacteristic->readValue();
-  Serial.println("value of set temp: ");
-  Serial.println((int)value[1]);
 //  uint8_t readTemperature = pRemoteCharacteristic->readUInt8();
 //  float castedTemperature = (float) (readTemperature/2);
 //  char temperatureToPublish[8];
   //Serial.println(dtostrf(castedTemperature,6,2,temperatureToPublish));
 //  client.publish(mqtt_topic.c_str(), dtostrf(castedTemperature,6,2,temperatureToPublish));
   //Holding connection with MQTT 
-  client.loop();
-  delay(10000);       
-}
+       
+
 
 void WriteFile() {
   Serial.println("zapisywanie JSON");
