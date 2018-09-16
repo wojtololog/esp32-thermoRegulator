@@ -10,7 +10,6 @@
 #include "BLEDevice.h"
 
 const char* CONFIG_FILE = "/config.json";
-boolean checkbut_status = false;
 String mqtt_server = "";
 String mqtt_port = ""; //uint16 but it could be 'int'
 String mqtt_user = "";
@@ -65,15 +64,11 @@ bool connectToServer(BLEAddress pAddress) {
       return false;
     }
     Serial.println(" - Found PIN characteristic");
-
-    //DOMYSLnie ustawiony na 6 bitow = regulator
-    //uint8_t pinbytes[4] = {0x57,0x04,0x00,0x00};
+    //device pin value
     uint8_t pinbytes[6] = {0x00,0x00,0x00,0x00,0x00,0x00};
     uint8_t* pinValue = pinbytes;
-    //pinValue = pinbytes*;
-    //Serial.println("Setting PIN characteristic value to \"" + pinValue + "\"");
-
-    //tutaj dopisałem true.
+    
+    //access to characteristic require to write PIN
     pRemoteCharacteristic->writeValue(pinValue, 4, true);
 
     delay(1000);
@@ -123,20 +118,30 @@ void btleSetup() {
    pBLEScan->start(10); //scanning for 10 secounds   
 }
 
-void configModeCallback (WiFiManager *myWiFiManager) {
-  myWiFiManager->resetSettings();
-}
-
-//JSON handling functions
+//JSON handling functions prototypes
 bool readFromJSON();
 void writeToJSON();
+
+void configModeCallback (WiFiManager *myWiFiManager) {
+  Serial.println("ConfigCallback Activated");
+  myWiFiManager->resetSettings();
+  delay(500);
+  btleSetup();
+}
 
 //MQTT subscriber
 WiFiClient espClient;
 PubSubClient client(espClient);
 
 void setup() {
-   Serial.begin(115200);
+  Serial.begin(115200);
+  
+   WiFiManager wifiManager;
+   //set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
+   wifiManager.setAPCallback(configModeCallback);
+   //wifiManager.resetSettings(); //reset saved settings
+   wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
+   
    //file system handling
     bool result = SPIFFS.begin();
     Serial.println("SPIFFS is opened:" + result);
@@ -145,14 +150,7 @@ void setup() {
      Serial.println("Failed to read config file, using default values");
    }
    btleSetup();
- 
-   //html checkbox
-   char customhtml[24] = "type=\"checkbox\"";
-
-   if(checkbut_status) {
-     strcat(customhtml, " checked"); //only way to handle checkbox state is to add "checked" string
-   } 
-   
+    
    //creatingWiFiManagerParams
    WiFiManagerParameter custom_mqtt_server("server", "mqtt server", mqtt_server.c_str(), 40); //m20.cloudmqtt.com
    WiFiManagerParameter custom_mqtt_port("port", "mqtt port", mqtt_port.c_str(), 6); // 10905 
@@ -160,24 +158,16 @@ void setup() {
    WiFiManagerParameter custom_mqtt_pass("pass", "mqtt pass", mqtt_pass.c_str(), 20); //594Vf9OfDZ-6 
    WiFiManagerParameter custom_mqtt_topic("topic", "mqtt topic", mqtt_topic.c_str(), 40);
    WiFiManagerParameter macDevice("macdevice1", "Device MAC address", macDeviceOne.c_str(), 40);
-   WiFiManagerParameter hint("<small>* Tip: If you want to save your MQTT params check it</small>");
-   WiFiManagerParameter save_checkbox("savebox","Zapisac?","T",2,customhtml);
+   WiFiManagerParameter hint("<small>* Tip: In order to repeat BT scan plug in ESP one more time</small>");
    WiFiManagerParameter scanningDevices("<h3> Wait bluetooth is scanning devices now...</h3>");
    WiFiManagerParameter searchedDevices("<h3> Device with MAC was found! </h3>");
    WiFiManagerParameter line("<br>");
    
-   WiFiManager wifiManager;
-   //set callback that gets called when connecting to previous WiFi fails, and enters Access Point mode
-   wifiManager.setAPCallback(configModeCallback);
-   //wifiManager.resetSettings(); //reset saved settings
-   wifiManager.setAPStaticIPConfig(IPAddress(10,0,1,1), IPAddress(10,0,1,1), IPAddress(255,255,255,0));
     //adding custom html to config page
     wifiManager.addParameter(&custom_mqtt_server);
     wifiManager.addParameter(&custom_mqtt_port);
     wifiManager.addParameter(&custom_mqtt_user);
     wifiManager.addParameter(&custom_mqtt_pass);
-    wifiManager.addParameter(&line);
-    wifiManager.addParameter(&save_checkbox);
     wifiManager.addParameter(&line);
     wifiManager.addParameter(&hint);
     wifiManager.addParameter(&line);
@@ -194,7 +184,6 @@ void setup() {
     
     //Connecting to AP
     if(wifiManager.autoConnect("ESP 32 - test","wojtek2468")) { //After this we are connected to wifi network    
-      checkbut_status = (strncmp(save_checkbox.getValue(),"T",1) == 0); //0==0, checkbut_status = true -> odczytana wczensiej wartosc (z JSONA) jest taka sama, checkbox zaznaczony;
       mqtt_server = custom_mqtt_server.getValue();
       mqtt_port = custom_mqtt_port.getValue();
       mqtt_user = custom_mqtt_user.getValue();
@@ -206,13 +195,16 @@ void setup() {
       delay(3000);
       
       if (doConnect == true) {
-        BLEAddress addressToConnect = BLEAddress(macDevice.getValue());
-        if (connectToServer(addressToConnect)) { //connecting to server we have our MAC address in textbox
+        BLEAddress addressToConnect = BLEAddress(macDevice.getValue()); //creating instance of BLEAddress -> contains searched MAC address
+        if (connectToServer(addressToConnect)) { //connecting to BT remote server -> we have our MAC address in textbox
           Serial.println("We are now connected to the BLE Server.");
           connected = true;
           delay(3000);
         } else {
           Serial.println("We have failed to connect to the server; there is nothin more we will do.");
+          wifiManager.resetSettings();
+          delay(1000);
+          ESP.restart();
         }
         doConnect = false;
       }
@@ -237,19 +229,21 @@ void setup() {
         } else {
           Serial.print("failed with state ");
           Serial.print(client.state());
+          wifiManager.resetSettings();
           delay(2000);
           ESP.restart();
-          delay(5000);
         }
       }
           
       } else {
+        wifiManager.resetSettings();
         delay(2000);
         ESP.restart(); 
       }
     
    } else {
       writeToJSON();
+      wifiManager.resetSettings();
       delay(2000);
       ESP.restart(); 
     }
@@ -260,13 +254,7 @@ void setup() {
   
 
 void loop() {
-  
-//  uint8_t readTemperature = pRemoteCharacteristic->readUInt8();
-//  float castedTemperature = (float) (readTemperature/2);
-
-  //Holding connection with MQTT 
-  //client.loop();
-      
+        
 }
 
 void writeToJSON() {
@@ -274,18 +262,17 @@ void writeToJSON() {
   DynamicJsonBuffer jsonBuffer;
   JsonObject& json = jsonBuffer.createObject();
  
-  //przypisanie parametrow z programu do jsona
-  json["checkbut_status"] = checkbut_status;
+  //assigned parameters from program to JSON file
   json["mqtt_server"] = mqtt_server;
   json["mqtt_port"] = mqtt_port;
   json["mqtt_user"] = mqtt_user;
   json["mqtt_pass"] = mqtt_pass;
   json["mqtt_topic"] = mqtt_topic;
  
-  //zapis parametrow do pliku
+  //save JSON parameters to file
   File f = SPIFFS.open(CONFIG_FILE, "w");
   if(!f) {
-    Serial.println("Nie udalo sie otworzyc pliku do zapisu parametrow");
+    Serial.println("Can't open JSON file");
     return;
   }
 
@@ -293,20 +280,20 @@ void writeToJSON() {
   json.printTo(f);
   f.close();
 
-  Serial.println("Pomyslnie zapisano parametry");
+  Serial.println("All parameters saved succesfully");
 }
 
 bool readFromJSON() {
 
   File f = SPIFFS.open(CONFIG_FILE, "r");
   if(!f) {
-    Serial.println("Nie udalo sie otworzyc pliku do zapisu parametrow");
+    Serial.println("Can't open JSON file");
     return false;
   }
   else
   {
     size_t size = f.size();
-    std::unique_ptr<char[]> buf(new char[size]); //bufor na dane
+    std::unique_ptr<char[]> buf(new char[size]); //buffor for our data
     //odczyt
     f.readBytes(buf.get(),size);
     f.close();
@@ -321,7 +308,6 @@ bool readFromJSON() {
     json.printTo(Serial);
 
     //zapisywanie z jsona do zmiennych
-    if(json.containsKey("checkbut_status")) checkbut_status = json["checkbut_status"]; 
     if(json.containsKey("mqtt_server")) mqtt_server = json["mqtt_server"].as<String>();
     if(json.containsKey("mqtt_port")) mqtt_port = json["mqtt_port"].as<String>();
     if(json.containsKey("mqtt_user")) mqtt_user = json["mqtt_user"].as<String>();
