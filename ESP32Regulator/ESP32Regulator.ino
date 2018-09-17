@@ -194,7 +194,7 @@ void setup() {
       Serial.println("connected...yeey :)"); 
       delay(3000);
       
-      if (doConnect == true) {
+      if (doConnect == true && (macDevice.getValue() == macDeviceOne)) {
         BLEAddress addressToConnect = BLEAddress(macDevice.getValue()); //creating instance of BLEAddress -> contains searched MAC address
         if (connectToServer(addressToConnect)) { //connecting to BT remote server -> we have our MAC address in textbox
           Serial.println("We are now connected to the BLE Server.");
@@ -207,6 +207,10 @@ void setup() {
           ESP.restart();
         }
         doConnect = false;
+      } else {
+        wifiManager.resetSettings();
+        delay(1000);
+        ESP.restart();
       }
   
       if(connected) {  
@@ -318,5 +322,6 @@ bool readFromJSON() {
   Serial.println("Read from JSON succesfully");
   return true;
 }
+
 
 
